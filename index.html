@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ESP Flash Download Tool</title>
+  <link rel="stylesheet" href="/src/style.css" />
+</head>
+<body>
+  <div id="app">
+    <div class="main-layout">
+      <!-- Left Sidebar: Connection & Config -->
+      <aside class="sidebar">
+        <div class="sidebar-group">
+          <div class="sidebar-label">连接</div>
+          <div class="field">
+            <label>芯片</label>
+            <select id="chip-type">
+              <option value="esp32">ESP32</option>
+              <option value="esp32s2">ESP32-S2</option>
+              <option value="esp32s3">ESP32-S3</option>
+              <option value="esp32c3">ESP32-C3</option>
+              <option value="esp32c6">ESP32-C6</option>
+              <option value="esp8266">ESP8266</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>串口</label>
+            <div class="field-row">
+              <select id="serial-port">
+                <option value="">选择串口...</option>
+              </select>
+              <button id="refresh-ports" class="icon-btn" title="刷新串口">⟳</button>
+            </div>
+          </div>
+          <div class="field">
+            <label>波特率</label>
+            <select id="baud-rate">
+              <option value="115200">115200</option>
+              <option value="230400">230400</option>
+              <option value="460800">460800</option>
+              <option value="921600" selected>921600</option>
+              <option value="1500000">1500000</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="sidebar-group">
+          <div class="sidebar-label toggle-label" id="spi-toggle">
+            <span>高级参数</span>
+            <div class="toggle-switch">
+              <input type="checkbox" id="spi-enabled" />
+              <span class="toggle-slider"></span>
+            </div>
+          </div>
+          <div id="spi-content" class="spi-fields" style="display:none;">
+            <div class="field">
+              <label>Flash Mode</label>
+              <select id="spi-mode">
+                <option value="dio" selected>DIO</option>
+                <option value="qio">QIO</option>
+                <option value="dout">DOUT</option>
+                <option value="qout">QOUT</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>Flash Size</label>
+              <select id="flash-size">
+                <option value="detect" selected>自动检测</option>
+                <option value="1mb">1MB</option>
+                <option value="2mb">2MB</option>
+                <option value="4mb">4MB</option>
+                <option value="8mb">8MB</option>
+                <option value="16mb">16MB</option>
+                <option value="32mb">32MB</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>SPI Speed</label>
+              <select id="spi-speed">
+                <option value="40m" selected>40MHz</option>
+                <option value="26m">26.7MHz</option>
+                <option value="20m">20MHz</option>
+                <option value="80m">80MHz</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- Device Info (shown after connect, fixed at bottom) -->
+        <div class="sidebar-spacer"></div>
+        <div class="sidebar-group device-info" id="device-info-section">
+          <div class="sidebar-label">设备信息</div>
+          <div class="info-list">
+            <div class="info-row"><span class="info-key">芯片</span><span class="info-val" id="info-chip">--</span></div>
+            <div class="info-row"><span class="info-key">MAC</span><span class="info-val" id="info-mac">--</span></div>
+            <div class="info-row"><span class="info-key">特性</span><span class="info-val" id="info-features">--</span></div>
+            <div class="info-row"><span class="info-key">晶振</span><span class="info-val" id="info-crystal">--</span></div>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Right Main Panel -->
+      <main class="content">
+        <!-- Firmware Files -->
+        <section class="card firmware-card">
+          <div class="card-header">
+            <h2>固件文件</h2>
+          </div>
+          <div class="card-body" id="firmware-list">
+            <div class="firmware-row" data-index="0">
+              <input type="checkbox" checked />
+              <input type="text" class="file-path" placeholder="点击浏览选择 .bin 文件" readonly />
+              <button class="btn-browse">浏览</button>
+              <span class="addr-sep">@</span>
+              <input type="text" class="flash-addr" value="0x0000" />
+            </div>
+            <div class="firmware-row" data-index="1">
+              <input type="checkbox" />
+              <input type="text" class="file-path" placeholder="点击浏览选择 .bin 文件" readonly />
+              <button class="btn-browse">浏览</button>
+              <span class="addr-sep">@</span>
+              <input type="text" class="flash-addr" value="0x8000" />
+            </div>
+            <div class="firmware-row" data-index="2">
+              <input type="checkbox" />
+              <input type="text" class="file-path" placeholder="点击浏览选择 .bin 文件" readonly />
+              <button class="btn-browse">浏览</button>
+              <span class="addr-sep">@</span>
+              <input type="text" class="flash-addr" value="0x10000" />
+            </div>
+            <div class="firmware-row" data-index="3">
+              <input type="checkbox" />
+              <input type="text" class="file-path" placeholder="点击浏览选择 .bin 文件" readonly />
+              <button class="btn-browse">浏览</button>
+              <span class="addr-sep">@</span>
+              <input type="text" class="flash-addr" value="0x0" />
+            </div>
+          </div>
+        </section>
+
+        <!-- Action Bar -->
+        <section class="card action-card">
+          <div class="action-bar">
+            <button id="btn-erase" class="btn btn-secondary">擦除 Flash</button>
+            <div class="progress-area">
+              <div class="progress-bar">
+                <div class="progress-fill" id="progress-fill"></div>
+              </div>
+              <span class="progress-label" id="progress-text">就绪</span>
+            </div>
+            <button id="btn-flash" class="btn btn-primary">开始烧录</button>
+          </div>
+        </section>
+
+        <!-- Status Pipeline (shown during flash) -->
+        <section class="card status-card" id="status-section" style="display:none;">
+          <div class="pipeline">
+            <div class="pipeline-step">
+              <span class="step-icon" id="status-connect">○</span>
+              <span class="step-label">连接</span>
+            </div>
+            <div class="pipeline-line"></div>
+            <div class="pipeline-step">
+              <span class="step-icon" id="status-stub">○</span>
+              <span class="step-label">Stub</span>
+            </div>
+            <div class="pipeline-line"></div>
+            <div class="pipeline-step">
+              <span class="step-icon" id="status-erase">○</span>
+              <span class="step-label">擦除</span>
+            </div>
+            <div class="pipeline-line"></div>
+            <div class="pipeline-step">
+              <span class="step-icon" id="status-write">○</span>
+              <span class="step-label">写入</span>
+            </div>
+            <div class="pipeline-line"></div>
+            <div class="pipeline-step">
+              <span class="step-icon" id="status-verify">○</span>
+              <span class="step-label">校验</span>
+            </div>
+          </div>
+          <div class="flash-stats">
+            <div class="stat"><span class="stat-label">大小</span><span class="stat-value" id="detail-size">--</span></div>
+            <div class="stat"><span class="stat-label">压缩</span><span class="stat-value" id="detail-compressed">--</span></div>
+            <div class="stat"><span class="stat-label">速度</span><span class="stat-value" id="detail-speed">--</span></div>
+            <div class="stat"><span class="stat-label">耗时</span><span class="stat-value" id="detail-time">--</span></div>
+          </div>
+        </section>
+
+        <!-- Log Output -->
+        <section class="card log-card">
+          <div class="card-header">
+            <h2>日志</h2>
+          </div>
+          <div class="card-body">
+            <div id="log-output"></div>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
