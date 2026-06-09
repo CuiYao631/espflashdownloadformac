@@ -213,6 +213,12 @@ async fn flash_firmware(
     let stderr_handle = std::thread::spawn(move || {
         if let Some(stderr) = stderr {
             read_lines_cr_lf(stderr, |line| {
+                // esptool v5+ outputs progress to stderr
+                if line.contains('%') {
+                    if let Some(pct) = parse_progress(line) {
+                        emit_progress(&app_clone2, 10.0 + pct * 90.0, "");
+                    }
+                }
                 emit_log(&app_clone2, line, "warn");
             });
         }

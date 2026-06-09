@@ -312,23 +312,31 @@ function resetStatusPanel() {
 
 // Parse esptool output line and update detail panel
 function parseEsptoolOutput(message) {
+  // Strip ANSI escape codes
+  const msg = message.replace(/\x1b\[[0-9;]*[a-zA-Z]|\[[0-9;]*[A-Za-z]/g, "").trim();
+  if (!msg) return;
+
   // Chip info: "Chip type:          ESP32-S3 (QFN56) (revision v0.2)"
-  if (message.startsWith("Chip type:")) {
-    infoChip.textContent = message.replace(/^Chip type:\s*/, "");
+  if (msg.startsWith("Chip type:")) {
+    infoChip.textContent = msg.replace(/^Chip type:\s*/, "");
     statusConnect.textContent = "✅";
   }
   // Legacy format: "Chip is ESP32-S3..."
-  else if (message.startsWith("Chip is ")) {
-    infoChip.textContent = message.replace("Chip is ", "");
+  else if (msg.startsWith("Chip is ")) {
+    infoChip.textContent = msg.replace("Chip is ", "");
+    statusConnect.textContent = "✅";
+  }
+  // Connected to
+  else if (msg.startsWith("Connected to ")) {
     statusConnect.textContent = "✅";
   }
   // MAC address: "MAC:                3c:84:27:c7:4b:20"
-  else if (message.startsWith("MAC:")) {
-    infoMac.textContent = message.replace(/^MAC:\s*/, "");
+  else if (msg.startsWith("MAC:")) {
+    infoMac.textContent = msg.replace(/^MAC:\s*/, "");
   }
   // Features: "Features:           Wi-Fi, BT 5 (LE)..."
-  else if (message.startsWith("Features:")) {
-    const features = message.replace(/^Features:\s*/, "").split(",").map(s => s.trim()).filter(Boolean);
+  else if (msg.startsWith("Features:")) {
+    const features = msg.replace(/^Features:\s*/, "").split(",").map(s => s.trim()).filter(Boolean);
     infoFeatures.innerHTML = "";
     features.forEach(f => {
       const tag = document.createElement("span");
@@ -338,10 +346,9 @@ function parseEsptoolOutput(message) {
     });
   }
   // Crystal: "Crystal frequency:  40MHz"
-  else if (message.startsWith("Crystal frequency:")) {
-    const crystal = message.replace(/^Crystal frequency:\s*/, "");
+  else if (msg.startsWith("Crystal frequency:")) {
+    const crystal = msg.replace(/^Crystal frequency:\s*/, "");
     infoCrystal.textContent = crystal;
-    // Auto-fill SPI speed based on crystal frequency
     const freq = parseInt(crystal);
     if (freq === 40) {
       spiSpeed.value = "40m";
@@ -352,8 +359,8 @@ function parseEsptoolOutput(message) {
     }
   }
   // Legacy: "Crystal is 40MHz"
-  else if (message.startsWith("Crystal is ")) {
-    const crystal = message.replace("Crystal is ", "");
+  else if (msg.startsWith("Crystal is ")) {
+    const crystal = msg.replace("Crystal is ", "");
     infoCrystal.textContent = crystal;
     const freq = parseInt(crystal);
     if (freq === 40) {
@@ -365,10 +372,9 @@ function parseEsptoolOutput(message) {
     }
   }
   // Flash size: "Detected flash size: 8MB"
-  else if (message.startsWith("Detected flash size:")) {
-    const size = message.replace(/^Detected flash size:\s*/, "");
+  else if (msg.startsWith("Detected flash size:")) {
+    const size = msg.replace(/^Detected flash size:\s*/, "");
     infoFlashSize.textContent = size;
-    // Auto-fill flash size dropdown
     const sizeLower = size.toLowerCase().replace(/\s/g, "");
     const option = Array.from(flashSize.options).find(o => o.value === sizeLower);
     if (option) {
@@ -376,10 +382,9 @@ function parseEsptoolOutput(message) {
     }
   }
   // Flash type: "Flash type set in eFuse: quad (4 data lines)"
-  else if (message.startsWith("Flash type set in eFuse:")) {
-    const type = message.replace(/^Flash type set in eFuse:\s*/, "");
+  else if (msg.startsWith("Flash type set in eFuse:")) {
+    const type = msg.replace(/^Flash type set in eFuse:\s*/, "");
     infoFlashType.textContent = type;
-    // Auto-fill flash mode based on type
     if (type.includes("quad")) {
       spiMode.value = "qio";
     } else if (type.includes("dual")) {
@@ -387,37 +392,35 @@ function parseEsptoolOutput(message) {
     }
   }
   // Manufacturer: "Manufacturer: 68"
-  else if (message.startsWith("Manufacturer:")) {
-    const mfr = message.replace(/^Manufacturer:\s*/, "");
-    // Also capture Device ID if on next line
+  else if (msg.startsWith("Manufacturer:")) {
+    const mfr = msg.replace(/^Manufacturer:\s*/, "");
     infoManufacturer.textContent = mfr;
   }
   // Device ID: "Device: 4017"
-  else if (message.startsWith("Device:")) {
-    const dev = message.replace(/^Device:\s*/, "");
+  else if (msg.startsWith("Device:")) {
+    const dev = msg.replace(/^Device:\s*/, "");
     infoManufacturer.textContent = infoManufacturer.textContent + " / " + dev;
   }
   // Connecting
-  else if (message.includes("Connecting")) {
+  else if (msg.includes("Connecting")) {
     statusSection.style.display = "block";
     statusConnect.textContent = "🔄";
   }
-  // Stub uploaded
-  else if (message.includes("Stub running")) {
+  // Stub uploaded: "Stub flasher running." or "Stub running"
+  else if (msg.includes("Stub") && msg.includes("running")) {
     statusStub.textContent = "✅";
   }
-  else if (message.includes("Uploading stub")) {
+  else if (msg.includes("Uploading stub")) {
     statusStub.textContent = "🔄";
   }
   // Flash erase
-  else if (message.includes("Flash will be erased")) {
+  else if (msg.includes("Flash will be erased")) {
     statusErase.textContent = "🔄";
   }
-  else if (message.includes("Compressed ")) {
+  else if (msg.includes("Compressed ")) {
     statusErase.textContent = "✅";
     statusWrite.textContent = "🔄";
-    // "Compressed 16384752 bytes to 8203230..."
-    const match = message.match(/Compressed (\d+) bytes to (\d+)/);
+    const match = msg.match(/Compressed (\d+) bytes to (\d+)/);
     if (match) {
       const original = parseInt(match[1]);
       const compressed = parseInt(match[2]);
@@ -425,11 +428,11 @@ function parseEsptoolOutput(message) {
       detailCompressed.textContent = `${formatBytes(compressed)} (${Math.round(compressed/original*100)}%)`;
     }
   }
-  // Write complete: "Wrote 16384752 bytes (8203230 compressed) at 0x00000000 in 95.7 seconds (effective 1370.4 kbit/s)..."
-  else if (message.startsWith("Wrote ")) {
+  // Write complete: "Wrote 8388608 bytes (1027262 compressed) at 0x00000000 in 38.0 seconds..."
+  else if (msg.startsWith("Wrote ")) {
     statusWrite.textContent = "✅";
-    const timeMatch = message.match(/in ([\d.]+) seconds/);
-    const speedMatch = message.match(/effective ([\d.]+) kbit\/s/);
+    const timeMatch = msg.match(/in ([\d.]+) seconds/);
+    const speedMatch = msg.match(/effective ([\d.]+) kbit\/s/);
     if (timeMatch) {
       detailTime.textContent = `${timeMatch[1]} 秒`;
     }
@@ -441,11 +444,11 @@ function parseEsptoolOutput(message) {
     }
   }
   // Hash verified
-  else if (message.includes("Hash of data verified")) {
+  else if (msg.includes("Hash of data verified")) {
     statusVerify.textContent = "✅";
   }
   // Hard resetting
-  else if (message.includes("Hard resetting")) {
+  else if (msg.includes("Hard resetting")) {
     statusConnect.textContent = "✅";
   }
 }
@@ -461,9 +464,7 @@ listen("flash-log", (event) => {
   const msg = event.payload.message;
   const level = event.payload.level || "info";
   log(msg, level);
-  if (level === "info") {
-    parseEsptoolOutput(msg);
-  }
+  parseEsptoolOutput(msg);
 });
 
 // Initial port refresh
