@@ -35,6 +35,33 @@ jobs:
         with:
           tauriScript: npx tauri
 
+      - name: Rebuild DMG with fix script
+        run: |
+          # Find the built .app
+          APP_PATH=$(find src-tauri/target/release/bundle/macos -name "*.app" -maxdepth 1 | head -1)
+          APP_NAME=$(basename "$APP_PATH")
+          DMG_NAME="ESP Flash Download Tool.dmg"
+          STAGING_DIR="$TMPDIR/dmg-staging"
+
+          # Prepare staging directory
+          rm -rf "$STAGING_DIR"
+          mkdir -p "$STAGING_DIR"
+          cp -R "$APP_PATH" "$STAGING_DIR/"
+          cp "src-tauri/resources/修复无法打开.command" "$STAGING_DIR/"
+          chmod +x "$STAGING_DIR/修复无法打开.command"
+
+          # Create symlink to Applications
+          ln -s /Applications "$STAGING_DIR/Applications"
+
+          # Remove old DMG
+          rm -f src-tauri/target/release/bundle/dmg/*.dmg
+
+          # Create new DMG
+          hdiutil create -volname "ESP Flash Download Tool" \
+            -srcfolder "$STAGING_DIR" \
+            -ov -format UDZO \
+            "src-tauri/target/release/bundle/dmg/$DMG_NAME"
+
       - name: Upload DMG artifact
         uses: actions/upload-artifact@v4
         with:
