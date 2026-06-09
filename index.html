@@ -66,7 +66,7 @@
             <div class="field">
               <label>Flash Size</label>
               <select id="flash-size">
-                <option value="detect" selected>自动检测</option>
+                <option value="" selected>手动设置</option>
                 <option value="1mb">1MB</option>
                 <option value="2mb">2MB</option>
                 <option value="4mb">4MB</option>
@@ -91,11 +91,33 @@
         <div class="sidebar-spacer"></div>
         <div class="sidebar-group device-info" id="device-info-section">
           <div class="sidebar-label">设备信息</div>
-          <div class="info-list">
-            <div class="info-row"><span class="info-key">芯片</span><span class="info-val" id="info-chip">--</span></div>
-            <div class="info-row"><span class="info-key">MAC</span><span class="info-val" id="info-mac">--</span></div>
-            <div class="info-row"><span class="info-key">特性</span><span class="info-val" id="info-features">--</span></div>
-            <div class="info-row"><span class="info-key">晶振</span><span class="info-val" id="info-crystal">--</span></div>
+          <div class="info-card">
+            <div class="info-card-header">
+              <span class="info-chip-name" id="info-chip">--</span>
+              <span class="info-chip-crystal" id="info-crystal">--</span>
+            </div>
+            <div class="info-card-mac" id="info-mac">--</div>
+          </div>
+          <div class="info-section">
+            <div class="info-section-title">特性</div>
+            <div class="info-tags" id="info-features"></div>
+          </div>
+          <div class="info-section">
+            <div class="info-section-title">Flash 存储</div>
+            <div class="info-grid">
+              <div class="info-grid-item">
+                <span class="info-grid-label">容量</span>
+                <span class="info-grid-val" id="info-flash-size">--</span>
+              </div>
+              <div class="info-grid-item">
+                <span class="info-grid-label">类型</span>
+                <span class="info-grid-val" id="info-flash-type">--</span>
+              </div>
+              <div class="info-grid-item">
+                <span class="info-grid-label">厂商/设备</span>
+                <span class="info-grid-val" id="info-manufacturer">--</span>
+              </div>
+            </div>
           </div>
         </div>
       </aside>
@@ -142,6 +164,7 @@
         <!-- Action Bar -->
         <section class="card action-card">
           <div class="action-bar">
+            <button id="btn-read-info" class="btn btn-secondary">读取设备信息</button>
             <button id="btn-erase" class="btn btn-secondary">擦除 Flash</button>
             <div class="progress-area">
               <div class="progress-bar">
@@ -191,14 +214,50 @@
 
         <!-- Log Output -->
         <section class="card log-card">
-          <div class="card-header">
-            <h2>日志</h2>
+          <div class="card-header log-header">
+            <div class="log-tabs">
+              <button class="log-tab active" id="tab-log">日志</button>
+              <button class="log-tab" id="tab-serial">串口调试</button>
+            </div>
           </div>
           <div class="card-body">
             <div id="log-output"></div>
+            <div id="serial-panel" style="display:none;">
+              <div id="serial-output"></div>
+              <div class="serial-toolbar">
+                <div class="serial-controls">
+                  <select id="serial-baud">
+                    <option value="9600">9600</option>
+                    <option value="115200" selected>115200</option>
+                    <option value="230400">230400</option>
+                    <option value="460800">460800</option>
+                    <option value="921600">921600</option>
+                  </select>
+                  <button id="btn-serial-toggle" class="btn btn-sm">打开串口</button>
+                  <button id="btn-serial-clear" class="btn btn-sm btn-ghost">清空</button>
+                </div>
+                <div class="serial-send">
+                  <input type="text" id="serial-input" placeholder="输入发送内容..." />
+                  <label class="serial-newline"><input type="checkbox" id="serial-newline" checked />换行</label>
+                  <button id="btn-serial-send" class="btn btn-sm btn-primary">发送</button>
+                </div>
+              </div>
+            </div>
           </div>
         </section>
       </main>
+    </div>
+  </div>
+
+  <!-- About Dialog -->
+  <div class="about-overlay" id="about-overlay" style="display:none;">
+    <div class="about-dialog">
+      <div class="about-icon">⚡</div>
+      <h1 class="about-title">ESP Flash Download Tool</h1>
+      <p class="about-version">版本 1.0.0</p>
+      <p class="about-desc">macOS 平台 ESP 芯片固件烧录工具</p>
+      <p class="about-copyright">© 2026 ESP Flash Tool</p>
+      <button class="btn btn-sm btn-primary about-close" id="about-close">确定</button>
     </div>
   </div>
 

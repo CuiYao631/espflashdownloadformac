@@ -2,6 +2,24 @@ import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { listen } from "@tauri-apps/api/event";
 
+// About dialog
+const aboutOverlay = document.getElementById("about-overlay");
+const aboutClose = document.getElementById("about-close");
+
+listen("show-about", () => {
+  aboutOverlay.style.display = "flex";
+});
+
+aboutClose.addEventListener("click", () => {
+  aboutOverlay.style.display = "none";
+});
+
+aboutOverlay.addEventListener("click", (e) => {
+  if (e.target === aboutOverlay) {
+    aboutOverlay.style.display = "none";
+  }
+});
+
 // DOM elements
 const chipType = document.getElementById("chip-type");
 const serialPort = document.getElementById("serial-port");
@@ -13,6 +31,7 @@ const flashSize = document.getElementById("flash-size");
 const spiEnabled = document.getElementById("spi-enabled");
 const spiToggle = document.getElementById("spi-toggle");
 const spiContent = document.getElementById("spi-content");
+const btnReadInfo = document.getElementById("btn-read-info");
 const btnErase = document.getElementById("btn-erase");
 const btnFlash = document.getElementById("btn-flash");
 const progressFill = document.getElementById("progress-fill");
@@ -26,6 +45,9 @@ const infoChip = document.getElementById("info-chip");
 const infoMac = document.getElementById("info-mac");
 const infoFeatures = document.getElementById("info-features");
 const infoCrystal = document.getElementById("info-crystal");
+const infoFlashSize = document.getElementById("info-flash-size");
+const infoFlashType = document.getElementById("info-flash-type");
+const infoManufacturer = document.getElementById("info-manufacturer");
 const statusConnect = document.getElementById("status-connect");
 const statusStub = document.getElementById("status-stub");
 const statusErase = document.getElementById("status-erase");
@@ -124,6 +146,13 @@ async function flashFirmware() {
     return;
   }
 
+  // Release serial if occupied
+  const wasSerialOpen = serialConnected;
+  if (serialConnected) {
+    await closeSerial();
+    switchToLogTab();
+  }
+
   btnFlash.disabled = true;
   btnErase.disabled = true;
   setProgress(0);
@@ -148,6 +177,10 @@ async function flashFirmware() {
   } finally {
     btnFlash.disabled = false;
     btnErase.disabled = false;
+    if (wasSerialOpen) {
+      switchToSerialTab();
+      await openSerial();
+    }
   }
 }
 
@@ -157,6 +190,13 @@ async function eraseFlash() {
   if (!port) {
     log("请先选择串口!", "error");
     return;
+  }
+
+  // Release serial if occupied
+  const wasSerialOpen = serialConnected;
+  if (serialConnected) {
+    await closeSerial();
+    switchToLogTab();
   }
 
   btnFlash.disabled = true;
@@ -177,11 +217,58 @@ async function eraseFlash() {
   } finally {
     btnFlash.disabled = false;
     btnErase.disabled = false;
+    if (wasSerialOpen) {
+      switchToSerialTab();
+      await openSerial();
+    }
+  }
+}
+
+// Read device info
+async function readDeviceInfo() {
+  const port = serialPort.value;
+  if (!port) {
+    log("请先选择串口!", "error");
+    return;
+  }
+
+  // Release serial if occupied
+  const wasSerialOpen = serialConnected;
+  if (serialConnected) {
+    await closeSerial();
+    switchToLogTab();
+  }
+
+  btnReadInfo.disabled = true;
+  btnFlash.disabled = true;
+  btnErase.disabled = true;
+  resetStatusPanel();
+  deviceInfoSection.style.display = "block";
+  log("正在读取设备信息...", "info");
+
+  try {
+    await invoke("read_device_info", {
+      port: port,
+      chip: chipType.value,
+      baudRate: parseInt(baudRate.value),
+    });
+    log("设备信息读取完成!", "success");
+  } catch (e) {
+    log(`读取设备信息失败: ${e}`, "error");
+  } finally {
+    btnReadInfo.disabled = false;
+    btnFlash.disabled = false;
+    btnErase.disabled = false;
+    if (wasSerialOpen) {
+      switchToSerialTab();
+      await openSerial();
+    }
   }
 }
 
 // Event listeners
 refreshPortsBtn.addEventListener("click", refreshPorts);
+btnReadInfo.addEventListener("click", readDeviceInfo);
 btnFlash.addEventListener("click", flashFirmware);
 btnErase.addEventListener("click", eraseFlash);
 
@@ -207,8 +294,11 @@ function resetStatusPanel() {
   statusSection.style.display = "none";
   infoChip.textContent = "--";
   infoMac.textContent = "--";
-  infoFeatures.textContent = "--";
+  infoFeatures.innerHTML = "";
   infoCrystal.textContent = "--";
+  infoFlashSize.textContent = "--";
+  infoFlashType.textContent = "--";
+  infoManufacturer.textContent = "--";
   statusConnect.textContent = "○";
   statusStub.textContent = "○";
   statusErase.textContent = "○";
@@ -222,23 +312,90 @@ function resetStatusPanel() {
 
 // Parse esptool output line and update detail panel
 function parseEsptoolOutput(message) {
-  // Chip info: "Chip is ESP32-S3 (QFN56) (revision v0.2)"
-  if (message.startsWith("Chip is ")) {
-
+  // Chip info: "Chip type:          ESP32-S3 (QFN56) (revision v0.2)"
+  if (message.startsWith("Chip type:")) {
+    infoChip.textContent = message.replace(/^Chip type:\s*/, "");
+    statusConnect.textContent = "✅";
+  }
+  // Legacy format: "Chip is ESP32-S3..."
+  else if (message.startsWith("Chip is ")) {
     infoChip.textContent = message.replace("Chip is ", "");
     statusConnect.textContent = "✅";
   }
-  // MAC address
-  else if (message.startsWith("MAC: ")) {
-    infoMac.textContent = message.replace("MAC: ", "");
+  // MAC address: "MAC:                3c:84:27:c7:4b:20"
+  else if (message.startsWith("MAC:")) {
+    infoMac.textContent = message.replace(/^MAC:\s*/, "");
   }
-  // Features
-  else if (message.startsWith("Features: ")) {
-    infoFeatures.textContent = message.replace("Features: ", "");
+  // Features: "Features:           Wi-Fi, BT 5 (LE)..."
+  else if (message.startsWith("Features:")) {
+    const features = message.replace(/^Features:\s*/, "").split(",").map(s => s.trim()).filter(Boolean);
+    infoFeatures.innerHTML = "";
+    features.forEach(f => {
+      const tag = document.createElement("span");
+      tag.className = "info-tag";
+      tag.textContent = f;
+      infoFeatures.appendChild(tag);
+    });
   }
-  // Crystal
+  // Crystal: "Crystal frequency:  40MHz"
+  else if (message.startsWith("Crystal frequency:")) {
+    const crystal = message.replace(/^Crystal frequency:\s*/, "");
+    infoCrystal.textContent = crystal;
+    // Auto-fill SPI speed based on crystal frequency
+    const freq = parseInt(crystal);
+    if (freq === 40) {
+      spiSpeed.value = "40m";
+    } else if (freq === 26) {
+      spiSpeed.value = "26m";
+    } else if (freq === 20) {
+      spiSpeed.value = "20m";
+    }
+  }
+  // Legacy: "Crystal is 40MHz"
   else if (message.startsWith("Crystal is ")) {
-    infoCrystal.textContent = message.replace("Crystal is ", "");
+    const crystal = message.replace("Crystal is ", "");
+    infoCrystal.textContent = crystal;
+    const freq = parseInt(crystal);
+    if (freq === 40) {
+      spiSpeed.value = "40m";
+    } else if (freq === 26) {
+      spiSpeed.value = "26m";
+    } else if (freq === 20) {
+      spiSpeed.value = "20m";
+    }
+  }
+  // Flash size: "Detected flash size: 8MB"
+  else if (message.startsWith("Detected flash size:")) {
+    const size = message.replace(/^Detected flash size:\s*/, "");
+    infoFlashSize.textContent = size;
+    // Auto-fill flash size dropdown
+    const sizeLower = size.toLowerCase().replace(/\s/g, "");
+    const option = Array.from(flashSize.options).find(o => o.value === sizeLower);
+    if (option) {
+      flashSize.value = sizeLower;
+    }
+  }
+  // Flash type: "Flash type set in eFuse: quad (4 data lines)"
+  else if (message.startsWith("Flash type set in eFuse:")) {
+    const type = message.replace(/^Flash type set in eFuse:\s*/, "");
+    infoFlashType.textContent = type;
+    // Auto-fill flash mode based on type
+    if (type.includes("quad")) {
+      spiMode.value = "qio";
+    } else if (type.includes("dual")) {
+      spiMode.value = "dio";
+    }
+  }
+  // Manufacturer: "Manufacturer: 68"
+  else if (message.startsWith("Manufacturer:")) {
+    const mfr = message.replace(/^Manufacturer:\s*/, "");
+    // Also capture Device ID if on next line
+    infoManufacturer.textContent = mfr;
+  }
+  // Device ID: "Device: 4017"
+  else if (message.startsWith("Device:")) {
+    const dev = message.replace(/^Device:\s*/, "");
+    infoManufacturer.textContent = infoManufacturer.textContent + " / " + dev;
   }
   // Connecting
   else if (message.includes("Connecting")) {
@@ -314,7 +471,8 @@ refreshPorts();
 
 // SPI toggle
 spiToggle.addEventListener("click", (e) => {
-  if (e.target === spiEnabled || e.target.closest('.toggle-switch')) return;
+  // Prevent double-toggle when clicking the checkbox itself
+  if (e.target === spiEnabled) return;
   spiEnabled.checked = !spiEnabled.checked;
   updateSpiVisibility();
 });
@@ -323,4 +481,138 @@ spiEnabled.addEventListener("change", updateSpiVisibility);
 
 function updateSpiVisibility() {
   spiContent.style.display = spiEnabled.checked ? "block" : "none";
+}
+
+// ====== Serial Debug ======
+const tabLog = document.getElementById("tab-log");
+const tabSerial = document.getElementById("tab-serial");
+const serialPanel = document.getElementById("serial-panel");
+const serialOutput = document.getElementById("serial-output");
+const serialBaud = document.getElementById("serial-baud");
+const btnSerialToggle = document.getElementById("btn-serial-toggle");
+const btnSerialClear = document.getElementById("btn-serial-clear");
+const btnSerialSend = document.getElementById("btn-serial-send");
+const serialInput = document.getElementById("serial-input");
+const serialNewline = document.getElementById("serial-newline");
+
+let serialConnected = false;
+
+// Tab switch helpers
+function switchToLogTab() {
+  tabLog.classList.add("active");
+  tabSerial.classList.remove("active");
+  logOutput.style.display = "block";
+  serialPanel.style.display = "none";
+}
+
+function switchToSerialTab() {
+  tabSerial.classList.add("active");
+  tabLog.classList.remove("active");
+  logOutput.style.display = "none";
+  serialPanel.style.display = "flex";
+}
+
+// Tab switching
+tabLog.addEventListener("click", async () => {
+  tabLog.classList.add("active");
+  tabSerial.classList.remove("active");
+  logOutput.style.display = "block";
+  serialPanel.style.display = "none";
+  if (serialConnected) {
+    await closeSerial();
+  }
+});
+
+tabSerial.addEventListener("click", async () => {
+  tabSerial.classList.add("active");
+  tabLog.classList.remove("active");
+  logOutput.style.display = "none";
+  serialPanel.style.display = "flex";
+  if (!serialConnected) {
+    await openSerial();
+  }
+});
+
+// Serial connect/disconnect
+btnSerialToggle.addEventListener("click", async () => {
+  if (serialConnected) {
+    await closeSerial();
+  } else {
+    await openSerial();
+  }
+});
+
+async function openSerial() {
+  const port = serialPort.value;
+  if (!port) {
+    log("请先选择串口!", "error");
+    return;
+  }
+  try {
+    await invoke("serial_open", {
+      port: port,
+      baudRate: parseInt(serialBaud.value),
+    });
+    serialConnected = true;
+    btnSerialToggle.textContent = "关闭串口";
+    btnSerialToggle.classList.add("btn-primary");
+    appendSerialText(`[已连接 ${port} @ ${serialBaud.value}]\n`, "serial-status");
+  } catch (e) {
+    log(`打开串口失败: ${e}`, "error");
+  }
+}
+
+async function closeSerial() {
+  try {
+    await invoke("serial_close");
+  } catch (e) {
+    // ignore
+  }
+  serialConnected = false;
+  btnSerialToggle.textContent = "打开串口";
+  btnSerialToggle.classList.remove("btn-primary");
+  appendSerialText("[已断开]\n", "serial-status");
+}
+
+// Serial send
+btnSerialSend.addEventListener("click", sendSerialData);
+serialInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") sendSerialData();
+});
+
+async function sendSerialData() {
+  const data = serialInput.value;
+  if (!data) return;
+  if (!serialConnected) {
+    log("请先打开串口!", "error");
+    return;
+  }
+  try {
+    await invoke("serial_send", {
+      data: data,
+      newline: serialNewline.checked,
+    });
+    appendSerialText(`← ${data}\n`, "serial-tx");
+    serialInput.value = "";
+  } catch (e) {
+    appendSerialText(`[发送失败: ${e}]\n`, "serial-error");
+  }
+}
+
+// Serial clear
+btnSerialClear.addEventListener("click", () => {
+  serialOutput.innerHTML = "";
+});
+
+// Listen for serial data from backend
+listen("serial-data", (event) => {
+  appendSerialText(event.payload.data, "serial-rx");
+});
+
+function appendSerialText(text, className) {
+  const span = document.createElement("span");
+  span.className = className || "";
+  span.textContent = text;
+  serialOutput.appendChild(span);
+  serialOutput.scrollTop = serialOutput.scrollHeight;
 }

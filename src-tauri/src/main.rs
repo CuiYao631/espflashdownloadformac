@@ -1,9 +1,17 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use serde::{Deserialize, Serialize};
-use std::io::{BufReader, Read};
+use std::io::{BufReader, Read, Write};
 use std::process::{Command, Stdio};
-use tauri::{AppHandle, Emitter};
+use std::sync::{Arc, Mutex};
+use tauri::menu::{MenuBuilder, SubmenuBuilder};
+use tauri::{AppHandle, Emitter, Manager};
+
+// Global serial port handle
+struct SerialState {
+    port: Option<Box<dyn serialport::SerialPort>>,
+    reading: bool,
+}
 
 /// Read from a stream splitting on both \r and \n (esptool uses \r for progress)
 fn read_lines_cr_lf<R: Read>(reader: R, mut callback: impl FnMut(&str)) {
@@ -283,6 +291,64 @@ async fn erase_flash(
     }
 }
 
+#[tauri::command]
+async fn read_device_info(
+    app: AppHandle,
+    port: String,
+    chip: String,
+    baud_rate: u32,
+) -> Result<(), String> {
+    let esptool = find_esptool()?;
+
+    emit_log(&app, "正在读取设备信息...", "info");
+
+    let mut cmd = build_esptool_cmd(&esptool);
+    cmd.args(["--chip", &chip]);
+    cmd.args(["--port", &port]);
+    cmd.args(["--baud", &baud_rate.to_string()]);
+    cmd.arg("flash_id");
+
+    cmd.stdout(Stdio::piped());
+    cmd.stderr(Stdio::piped());
+
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| format!("执行 esptool 失败: {}", e))?;
+
+    let stdout = child.stdout.take();
+    let stderr = child.stderr.take();
+
+    let app_clone = app.clone();
+    let stdout_handle = std::thread::spawn(move || {
+        if let Some(stdout) = stdout {
+            read_lines_cr_lf(stdout, |line| {
+                emit_log(&app_clone, line, "info");
+            });
+        }
+    });
+
+    let app_clone2 = app.clone();
+    let stderr_handle = std::thread::spawn(move || {
+        if let Some(stderr) = stderr {
+            read_lines_cr_lf(stderr, |line| {
+                emit_log(&app_clone2, line, "warn");
+            });
+        }
+    });
+
+    let _ = stdout_handle.join();
+    let _ = stderr_handle.join();
+
+    let status = child.wait().map_err(|e| format!("等待进程结束失败: {}", e))?;
+
+    if status.success() {
+        emit_log(&app, "设备信息读取完成!", "success");
+        Ok(())
+    } else {
+        Err(format!("读取设备信息失败，退出码: {}", status))
+    }
+}
+
 fn parse_progress(line: &str) -> Option<f64> {
     if let Some(pct_pos) = line.find('%') {
         let before = &line[..pct_pos];
@@ -297,14 +363,162 @@ fn parse_progress(line: &str) -> Option<f64> {
     None
 }
 
+#[derive(Clone, Serialize)]
+struct SerialDataPayload {
+    data: String,
+}
+
+#[tauri::command]
+async fn serial_open(
+    app: AppHandle,
+    port: String,
+    baud_rate: u32,
+) -> Result<(), String> {
+    let state = app.state::<Arc<Mutex<SerialState>>>();
+
+    // Close existing connection first
+    {
+        let mut s = state.lock().unwrap();
+        s.reading = false;
+        s.port = None;
+    }
+
+    // Small delay to let read thread stop
+    std::thread::sleep(std::time::Duration::from_millis(100));
+
+    let port_handle = serialport::new(&port, baud_rate)
+        .timeout(std::time::Duration::from_millis(100))
+        .open()
+        .map_err(|e| format!("打开串口失败: {}", e))?;
+
+    let read_port = port_handle
+        .try_clone()
+        .map_err(|e| format!("克隆串口失败: {}", e))?;
+
+    {
+        let mut s = state.lock().unwrap();
+        s.port = Some(port_handle);
+        s.reading = true;
+    }
+
+    // Start reading thread
+    let state_clone = Arc::clone(&state);
+    let app_clone = app.clone();
+    std::thread::spawn(move || {
+        let mut read_port = read_port;
+        let mut buf = [0u8; 1024];
+        loop {
+            {
+                let s = state_clone.lock().unwrap();
+                if !s.reading {
+                    break;
+                }
+            }
+            match read_port.read(&mut buf) {
+                Ok(n) if n > 0 => {
+                    let data = String::from_utf8_lossy(&buf[..n]).to_string();
+                    let _ = app_clone.emit("serial-data", SerialDataPayload { data });
+                }
+                Ok(_) => {}
+                Err(ref e) if e.kind() == std::io::ErrorKind::TimedOut => {}
+                Err(_) => break,
+            }
+        }
+    });
+
+    Ok(())
+}
+
+#[tauri::command]
+async fn serial_close(app: AppHandle) -> Result<(), String> {
+    let state = app.state::<Arc<Mutex<SerialState>>>();
+    let mut s = state.lock().unwrap();
+    s.reading = false;
+    s.port = None;
+    Ok(())
+}
+
+#[tauri::command]
+async fn serial_send(app: AppHandle, data: String, newline: bool) -> Result<(), String> {
+    let state = app.state::<Arc<Mutex<SerialState>>>();
+    let mut s = state.lock().unwrap();
+    if let Some(ref mut port) = s.port {
+        let send_data = if newline {
+            format!("{}\r\n", data)
+        } else {
+            data
+        };
+        port.write_all(send_data.as_bytes())
+            .map_err(|e| format!("发送数据失败: {}", e))?;
+        Ok(())
+    } else {
+        Err("串口未打开".to_string())
+    }
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
+        .setup(|app| {
+            let app_menu = SubmenuBuilder::new(app, "ESP Flash Tool")
+                .text("about", "关于 ESP Flash Tool")
+                .separator()
+                .hide()
+                .hide_others()
+                .show_all()
+                .separator()
+                .quit()
+                .build()?;
+
+            let edit_menu = SubmenuBuilder::new(app, "编辑")
+                .undo()
+                .redo()
+                .separator()
+                .cut()
+                .copy()
+                .paste()
+                .select_all()
+                .build()?;
+
+            let window_menu = SubmenuBuilder::new(app, "窗口")
+                .minimize()
+                .maximize()
+                .separator()
+                .close_window()
+                .build()?;
+
+            let help_menu = SubmenuBuilder::new(app, "帮助")
+                .text("docs", "使用文档")
+                .build()?;
+
+            let menu = MenuBuilder::new(app)
+                .item(&app_menu)
+                .item(&edit_menu)
+                .item(&window_menu)
+                .item(&help_menu)
+                .build()?;
+
+            app.set_menu(menu)?;
+            Ok(())
+        })
+        .on_menu_event(|app, event| {
+            if event.id().as_ref() == "about" {
+                let _ = app.emit("show-about", ());
+            }
+        })
+        .manage(Arc::new(Mutex::new(SerialState {
+            port: None,
+            reading: false,
+        })))
         .invoke_handler(tauri::generate_handler![
             list_serial_ports,
             flash_firmware,
             erase_flash,
+            read_device_info,
+            serial_open,
+            serial_close,
+            serial_send,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
