@@ -5,10 +5,19 @@
 }
 
 :root {
-  --bg-window: rgba(28, 28, 30, 0.92);
+  color-scheme: dark;
+  --bg-window: #1c1c1e;
   --bg-sidebar: rgba(44, 44, 46, 0.6);
   --bg-card: rgba(58, 58, 60, 0.35);
   --bg-input: rgba(0, 0, 0, 0.2);
+  --bg-inset: rgba(0, 0, 0, 0.2);
+  --bg-inset-strong: rgba(0, 0, 0, 0.25);
+  --bg-raised: rgba(255, 255, 255, 0.08);
+  --bg-raised-hover: rgba(255, 255, 255, 0.12);
+  --bg-step: rgba(255, 255, 255, 0.05);
+  --bg-active: rgba(255, 255, 255, 0.08);
+  --bg-dialog: rgba(44, 44, 46, 0.95);
+  --scrollbar-thumb: rgba(255, 255, 255, 0.12);
   --bg-hover: rgba(255, 255, 255, 0.06);
   --border: rgba(255, 255, 255, 0.08);
   --border-light: rgba(255, 255, 255, 0.12);
@@ -24,13 +33,40 @@
   --radius-lg: 12px;
 }
 
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg-window: #f3f5f7;
+  --bg-sidebar: rgba(231, 236, 241, 0.94);
+  --bg-card: rgba(255, 255, 255, 0.82);
+  --bg-input: rgba(255, 255, 255, 0.9);
+  --bg-inset: rgba(32, 47, 62, 0.06);
+  --bg-inset-strong: rgba(32, 47, 62, 0.09);
+  --bg-raised: rgba(32, 47, 62, 0.06);
+  --bg-raised-hover: rgba(32, 47, 62, 0.1);
+  --bg-step: rgba(32, 47, 62, 0.045);
+  --bg-active: rgba(32, 47, 62, 0.08);
+  --bg-dialog: rgba(250, 252, 254, 0.98);
+  --scrollbar-thumb: rgba(32, 47, 62, 0.2);
+  --bg-hover: rgba(32, 47, 62, 0.045);
+  --border: rgba(32, 47, 62, 0.1);
+  --border-light: rgba(32, 47, 62, 0.16);
+  --text-primary: #1d2732;
+  --text-secondary: #566574;
+  --text-tertiary: #7b8792;
+  --accent: #0876d1;
+  --accent-green: #16834b;
+  --accent-red: #c8372d;
+  --accent-orange: #a86200;
+}
+
 body {
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", sans-serif;
-  background: #1c1c1e;
+  background: var(--bg-window);
   color: var(--text-primary);
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
   overflow: hidden;
+  transition: background-color 0.2s, color 0.2s;
 }
 
 #app {
@@ -222,7 +258,7 @@ select:focus, input[type="text"]:focus {
 
 /* Device Info in Sidebar */
 .device-info .info-card {
-  background: rgba(0, 0, 0, 0.25);
+  background: var(--bg-inset-strong);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   padding: 10px;
@@ -245,7 +281,7 @@ select:focus, input[type="text"]:focus {
 .info-chip-crystal {
   font-size: 10px;
   color: var(--text-tertiary);
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--bg-raised);
   padding: 1px 6px;
   border-radius: 3px;
 }
@@ -298,7 +334,7 @@ select:focus, input[type="text"]:focus {
   justify-content: space-between;
   align-items: center;
   padding: 4px 8px;
-  background: rgba(0, 0, 0, 0.15);
+  background: var(--bg-inset);
   border-radius: var(--radius-sm);
 }
 
@@ -379,7 +415,7 @@ select:focus, input[type="text"]:focus {
 }
 
 .firmware-row .btn-browse {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--bg-raised);
   color: var(--text-secondary);
   border: 1px solid var(--border-light);
   padding: 4px 10px;
@@ -392,7 +428,7 @@ select:focus, input[type="text"]:focus {
 }
 
 .firmware-row .btn-browse:hover {
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--bg-raised-hover);
   color: var(--text-primary);
 }
 
@@ -431,7 +467,7 @@ select:focus, input[type="text"]:focus {
 .progress-bar {
   flex: 1;
   height: 4px;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--bg-inset);
   border-radius: 2px;
   overflow: hidden;
 }
@@ -524,7 +560,7 @@ select:focus, input[type="text"]:focus {
   align-items: center;
   justify-content: center;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--bg-step);
   border: 1px solid var(--border-light);
   font-style: normal;
 }
@@ -606,7 +642,7 @@ select:focus, input[type="text"]:focus {
 }
 
 #log-output::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--scrollbar-thumb);
   border-radius: 3px;
 }
 
@@ -657,7 +693,7 @@ select:focus, input[type="text"]:focus {
 
 .log-tab.active {
   color: var(--text-primary);
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--bg-active);
 }
 
 /* Serial Panel */
@@ -796,7 +832,7 @@ select:focus, input[type="text"]:focus {
 }
 
 .about-dialog {
-  background: rgba(44, 44, 46, 0.95);
+  background: var(--bg-dialog);
   backdrop-filter: blur(30px);
   -webkit-backdrop-filter: blur(30px);
   border: 1px solid var(--border-light);

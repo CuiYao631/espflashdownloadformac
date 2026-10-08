@@ -22,6 +22,7 @@ aboutOverlay.addEventListener("click", (e) => {
 
 // DOM elements
 const chipType = document.getElementById("chip-type");
+const themeSelect = document.getElementById("theme-select");
 const serialPort = document.getElementById("serial-port");
 const baudRate = document.getElementById("baud-rate");
 const refreshPortsBtn = document.getElementById("refresh-ports");
@@ -37,6 +38,24 @@ const btnFlash = document.getElementById("btn-flash");
 const progressFill = document.getElementById("progress-fill");
 const progressText = document.getElementById("progress-text");
 const logOutput = document.getElementById("log-output");
+
+const systemTheme = window.matchMedia("(prefers-color-scheme: dark)");
+const savedTheme = localStorage.getItem("app-theme");
+
+function applyTheme(preference) {
+  const theme = preference === "system"
+    ? (systemTheme.matches ? "dark" : "light")
+    : preference;
+  document.documentElement.dataset.theme = theme;
+  themeSelect.value = preference;
+  localStorage.setItem("app-theme", preference);
+}
+
+applyTheme(["system", "light", "dark"].includes(savedTheme) ? savedTheme : "system");
+themeSelect.addEventListener("change", () => applyTheme(themeSelect.value));
+systemTheme.addEventListener("change", () => {
+  if (themeSelect.value === "system") applyTheme("system");
+});
 
 // Detail panel elements
 const deviceInfoSection = document.getElementById("device-info-section");
